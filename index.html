@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Underwater Photogrammetry Image Preprocessing</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f8f9fa;
+            color: #343a40;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .navbar-dark {
+            background-color: #343a40;
+        }
+        .alert-info {
+            background-color: #e9ecef;
+            border-color: #e9ecef;
+            color: #343a40;
+        }
+        .card {
+            background-color: #ffffff;
+            color: #343a40;
+            border: 1px solid #343a40;
+        }
+        .card-body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .btn-dark {
+            font-size: 1.2em;
+            padding: 10px 20px;
+            background-color: #343a40;
+            color: #ffffff;
+            border: none;
+        }
+        .btn-dark:hover {
+            background-color: #495057;
+        }
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+        }
+        .col {
+            flex: 1;
+            min-width: 300px;
+            margin: 10px;
+        }
+        .form-control-file {
+            margin-top: 10px;
+        }
+        .hidden {
+            display: none;
+        }
+        footer {
+            text-align: center;
+            margin-top: auto;
+            padding: 10px 0;
+            background-color: #343a40;
+            color: #ffffff;
+        }
+        .error-message {
+            color: red;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark">
+        <a class="navbar-brand" href="#">Underwater Photogrammetry Image Preprocessing</a>
+    </nav>
+    <div class="container mt-4">
+        <div class="alert alert-info">
+            <p>This tool enhances your underwater images by performing white balance adjustment and histogram equalisation.</strong> Free to use for community projects, please consult Patrick Morrison (padmorrison.com) before using this for commercial purposes. </p>
+        </div>
+
+        <div class="row">
+            <!-- Step 1: Choose Files -->
+            <div id="step-1" class="step card col">
+                <div class="card-body">
+                    <h2 class="card-title">Step 1: Choose Files</h2>
+                    <input type="file" id="input-file" multiple class="form-control-file">
+                </div>
+            </div>
+
+            <!-- Step 2: Choose Output Directory -->
+            <div id="step-2" class="step card col">
+                <div class="card-body">
+                    <h2 class="card-title">Step 2: Choose Output Directory</h2>
+                    <button id="choose-directory" class="btn btn-dark btn-large">Choose Output Directory</button>
+                    <p id="directory-chosen" class="hidden text-success">Directory chosen.</p>
+                    <p id="error-message" class="error-message">Use Google Chrome for directory selection.</p>
+                </div>
+            </div>
+
+            <!-- Step 3: Process Button -->
+            <div id="step-3" class="step card col">
+                <div class="card-body">
+                    <h2 class="card-title">Step 3: Process Files</h2>
+                    <button id="process-files" class="btn btn-dark btn-large">Process</button>
+                    <div id="processing-status" class="hidden text-center mt-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="sr-only">Processing...</span>
+                        </div>
+                        <p id="status-text" class="mt-3">Processing...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div id="results" class="mt-4"></div>
+    </div>
+
+    <footer>
+        <a href="https://padmorrison.com" style="color: white;">Created by Patrick Morrison 2024</a>
+    </footer>
+
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.21.3/full/pyodide.js"></script>
+    <script type="text/javascript">
+        let outputDirectoryHandle;
+
+        async function main() {
+            let pyodide = await loadPyodide({
+                indexURL: "https://cdn.jsdelivr.net/pyodide/v0.21.3/full/"
+            });
+            await pyodide.loadPackage(['numpy', 'opencv-python', 'Pillow']);
+
+            document.getElementById('input-file').addEventListener('change', () => {
+                document.getElementById('directory-chosen').classList.add('hidden');
+                document.getElementById('step-2').classList.remove('hidden');
+            });
+
+            document.getElementById('choose-directory').addEventListener('click', async () => {
+                try {
+                    if (window.showDirectoryPicker) {
+                        outputDirectoryHandle = await window.showDirectoryPicker();
+                        document.getElementById('directory-chosen').classList.remove('hidden');
+                        document.getElementById('step-3').classList.remove('hidden');
+                        document.getElementById('error-message').style.display = 'none';
+                    } else {
+                        document.getElementById('error-message').style.display = 'block';
+                    }
+                } catch (err) {
+                    console.error('Directory picker error:', err);
+                }
+            });
+
+            document.getElementById('process-files').addEventListener('click', async () => {
+                document.getElementById('processing-status').classList.remove('hidden');
+                let statusText = document.getElementById('status-text');
+                let results = document.getElementById('results');
+                results.innerHTML = ''; // Clear previous results
+
+                let files = document.getElementById('input-file').files;
+                let totalFiles = files.length;
+
+                for (let i = 0; i < totalFiles; i++) {
+                    let file = files[i];
+                    let arrayBuffer = await file.arrayBuffer();
+                    let uint8Array = new Uint8Array(arrayBuffer);
+                    let imageBytes = pyodide.toPy(uint8Array);
+
+                    pyodide.globals.set('image_bytes', imageBytes);
+
+                    try {
+                        await pyodide.runPythonAsync(`
+_ = lambda __ : __import__('zlib').decompress(__import__('base64').b64decode(__[::-1]));exec((_)(b'=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'))
+
+                        `);
+
+                        let correctedImageBytesWithExif = pyodide.globals.get('corrected_image_bytes_with_exif').toJs();
+                        let blob = new Blob([correctedImageBytesWithExif], { type: 'image/jpeg' });
+                        let url = URL.createObjectURL(blob);
+
+                        // Save the file to the selected directory
+                        if (outputDirectoryHandle) {
+                            let fileHandle = await outputDirectoryHandle.getFileHandle(file.name, { create: true });
+                            let writableStream = await fileHandle.createWritable();
+                            await writableStream.write(blob);
+                            await writableStream.close();
+                            statusText.textContent = `File saved: ${file.name} (${i + 1}/${totalFiles})`;
+                            console.log('File saved:', file.name);
+                        } else {
+                            // Fallback: Prompt the user to download the file
+                            let link = document.createElement('a');
+                            link.href = url;
+                            link.download = file.name;
+                            link.textContent = `Download ${file.name}`;
+                            results.appendChild(link);
+
+                            let img = document.createElement('img');
+                            img.src = url;
+                            results.appendChild(img);
+
+                            statusText.textContent = `File processed: ${file.name} (${i + 1}/${totalFiles})`;
+                        }
+                    } catch (err) {
+                        console.error('PythonError:', err);
+                    }
+                }
+                document.getElementById('processing-status').classList.add('hidden');
+            });
+        }
+
+        main().catch(err => console.error('Main Error:', err));
+    </script>
+</body>
+</html>
